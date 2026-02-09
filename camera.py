@@ -6,6 +6,7 @@ import io
 import numpy as np
 import cv2 as cv
 from picamera2 import Picamera2, Preview
+import spidev
 
 # Camera object init and preview start
 picam2 = Picamera2()
@@ -26,3 +27,19 @@ img = cv.imdecode(img_arr, cv.IMREAD_COLOR)
 cv.imshow("Image", img)
 cv.waitKey(0)
 cv.destroyAllWindows()
+
+# SPI setup
+spi = spidev.SpiDev()
+spi.open(0, 0)
+
+spi.max_speed_hz = 1_000_000
+spi.mode = 0
+spi.bits_per_word = 8
+
+# SPI transfer
+tx_data = img_data.getbuffer().tobytes()
+print(f"Tx data: {tx_data[0]}")
+rx_data = spi.xfer3(tx_data)
+print(f"Rx data: {rx_data[0]}")
+
+spi.close()

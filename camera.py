@@ -30,16 +30,19 @@ cv.destroyAllWindows()
 
 # SPI setup
 spi = spidev.SpiDev()
-spi.open(0, 0)
-
-spi.max_speed_hz = 1_000_000
-spi.mode = 0
-spi.bits_per_word = 8
-
-# SPI transfer
 tx_data = img_data.getbuffer().tobytes()
-print(f"Tx data: {tx_data[0]}")
-rx_data = spi.xfer3(tx_data)
-print(f"Rx data: {rx_data[0]}")
+while True:
+	spi.open(0, 0)
 
-spi.close()
+	spi.max_speed_hz = 1_000_000
+	spi.mode = 0
+	spi.bits_per_word = 8
+
+	# SPI transfer
+	print(f"Tx data: {tx_data[0]}")
+	rx_data = spi.xfer3(tx_data)
+	print(f"Rx data: {rx_data[0]}")
+	
+	# Close and wait
+	spi.close()
+	time.sleep(5)

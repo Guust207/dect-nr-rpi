@@ -11,7 +11,7 @@ import spidev
 def capture_new_jpeg(camera):
 	# Start camera and warm up
 	camera.start(show_preview=True)
-	time.sleep(1)
+	time.sleep(2)
 	
 	# Capture image data
 	img_data = io.BytesIO()
@@ -90,10 +90,10 @@ capture_config = picam2.create_still_configuration({"format": "YUV420"})
 
 counter = 1
 while True:
-	print(f"\n=== Round {counter} ===")
-	
 	# Capture image using camera
 	tx_data = capture_new_jpeg(picam2)
+	
+	print(f"\n=== Round {counter} ===")
 	
 	# Send image as data through SPI
 	CHUNK_SIZE = 4096

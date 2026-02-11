@@ -2,25 +2,28 @@
 import time
 import os
 import io
+import signal
 import numpy as np
-from picamera2 import Picamera2, Preview
+from picamera2 import Picamera2
 import spidev
 
+# Camera global variable
+picam2 = Picamera2()
 
-def capture_new_jpeg(camera):
+def capture_new_jpeg():
 	# Start camera and warm up
-	camera.start(show_preview=True)
-	time.sleep(1)
+	picam2.start(show_preview=True)
+	time.sleep(2)
 	
 	# Capture image data
 	img_data = io.BytesIO()
-	camera.capture_file(img_data, format="jpeg")
+	picam2.capture_file(img_data, format="jpeg")
 
 	# Get image bytes
 	img_data = img_data.getbuffer().tobytes()
 
 	# Return image data
-	camera.stop_preview()
+	picam2.stop_preview()
 	return img_data
 # End of function
 
@@ -67,19 +70,29 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 # End of function
 
 
+def cleanup(signum, frame):
+	if picam2:
+		picam2.stop()
+		picam2.close()
+	sys.exit(0)
+# End of function
+
 def main():
 	# Camera object init and preview start
-	picam2 = Picamera2()
 	picam2.options["quality"] = 45
 	capture_config = picam2.create_still_configuration({"format": "YUV420"})
 
 	# Capture image using camera
-	tx_data = capture_new_jpeg(picam2)
+	tx_data = capture_new_jpeg()
 	
 	# Send image as data through SPI
 	CHUNK_SIZE = 4096
 	MAX_DATA_SIZE = 32768	
 	send_chunks(tx_data, CHUNK_SIZE, MAX_DATA_SIZE)
+	
+	# SIGTERM handling
+	signal.signal(signal.SIGTERM, cleanup)
+	signal.signal(signal.SIGINT, cleanup)
 # End main
 
 if __name__ == "__main__":

@@ -7,7 +7,40 @@ import cv2 as cv
 from picamera2 import Picamera2, Preview
 import spidev
 
-def send_chunks(data, chunk_size=4096):
+
+def capture_new_jpeg(camera):
+	# Start camera and warm up
+	camera.start(show_preview=True)
+	time.sleep(1)
+	
+	# Capture image data
+	img_data = io.BytesIO()
+	camera.capture_file(img_data, format="jpeg")
+
+	# Get image bytes
+	img_data = img_data.getbuffer().tobytes()
+	data_size = len(img_data)
+	print(f"Image data size in bytes: {data_size}")
+
+	# Display the image
+	camera.stop_preview()
+	img_arr = np.frombuffer(img_data, dtype=np.uint8)
+	img = cv.imdecode(img_arr, cv.IMREAD_COLOR)
+	cv.imshow("Image", img)
+	time.sleep(2)
+	cv.destroyAllWindows()
+	
+	return img_data
+# End of function
+
+
+def send_chunks(data, chunk_size=4096, max_data_size=32768):
+	# Check size
+	data_size = len(data)
+	if data_size > max_data_size:
+		print("Transfer aborted. Too large data.")
+		return # Do not send data above threshold
+	
 	# Chunk setup
 	data_size = len(data)
 	no_chunks = (data_size + chunk_size - 1) // chunk_size
@@ -35,6 +68,7 @@ def send_chunks(data, chunk_size=4096):
 		spi.mode = 3
 		spi.bits_per_word = 8
 		
+		
 		# Send chunk
 		spi.xfer3(list(chunk))
 		
@@ -43,37 +77,28 @@ def send_chunks(data, chunk_size=4096):
 		time.sleep(0.5)
 	# End of loop
 		
-	print("Transfer complete!") 
+	print("Transfer complete!")
+	
+	return
+# End of function
 
-# Camera object init and preview start
-picam2 = Picamera2()
-picam2.options["quality"] = 40
-capture_config = picam2.create_still_configuration({"format": "YUV420"})
-picam2.start(show_preview=True)
-time.sleep(1)
-
-# Capture image data
-img_data = io.BytesIO()
-picam2.capture_file(img_data, format="jpeg")
-
-# Get image bytes
-tx_data = img_data.getbuffer().tobytes()
-tx_size = len(tx_data)
-print(f"Image data size in bytes: {tx_size}")
-
-# Display the image
-picam2.stop_preview()
-img_arr = np.frombuffer(img_data.getbuffer().tobytes(), dtype=np.uint8)
-img = cv.imdecode(img_arr, cv.IMREAD_COLOR)
-cv.imshow("Image", img)
-cv.waitKey(0)
-cv.destroyAllWindows()
 	
 # Main loop
+# Camera object init and preview start
+picam2 = Picamera2()
+picam2.options["quality"] = 45
+capture_config = picam2.create_still_configuration({"format": "YUV420"})
+
 counter = 1
 while True:
 	print(f"\n=== Round {counter} ===")
+	
+	# Capture image using camera
+	tx_data = capture_new_jpeg(picam2)
+	
+	# Send image as data through SPI
 	CHUNK_SIZE = 4096	
 	send_chunks(tx_data, CHUNK_SIZE)
+	
 	counter += 1
 	time.sleep(5)

@@ -1,0 +1,16 @@
+[Unit]
+Description="Capture image and send via SPI"
+After=multi-user.target
+
+[Service]
+Type=oneshot
+User=vimms
+Group=vimms
+WorkingDirectory=/home/vimms/dect-nr-rpi/camera_spi
+ExecStart=/usr/bin/python3 /home/vimms/dect-nr-rpi/camera_spi/main.py
+StandardOutput=journal
+StandardError=journal
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

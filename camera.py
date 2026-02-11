@@ -9,7 +9,8 @@ import spidev
 
 def send_chunks(data, chunk_size=4096):
 	# Chunk setup
-	no_chunks = (len(data) + chunk_size - 1) // chunk_size
+	data_size = len(data)
+	no_chunks = (data_size + chunk_size - 1) // chunk_size
 	print(f"\nSending {len(data)} bytes in {no_chunks} chunks")
 	
 	for i in range(no_chunks):
@@ -40,6 +41,7 @@ def send_chunks(data, chunk_size=4096):
 		# Close SPI and wait
 		spi.close()
 		time.sleep(0.5)
+	# End of loop
 		
 	print("Transfer complete!") 
 

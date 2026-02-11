@@ -68,7 +68,6 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		spi.mode = 3
 		spi.bits_per_word = 8
 		
-		
 		# Send chunk
 		spi.xfer3(list(chunk))
 		
@@ -97,8 +96,9 @@ while True:
 	tx_data = capture_new_jpeg(picam2)
 	
 	# Send image as data through SPI
-	CHUNK_SIZE = 4096	
-	send_chunks(tx_data, CHUNK_SIZE)
+	CHUNK_SIZE = 4096
+	MAX_DATA_SIZE = 32768
+	send_chunks(tx_data, CHUNK_SIZE, MAX_DATA_SIZE)
 	
 	counter += 1
 	time.sleep(5)

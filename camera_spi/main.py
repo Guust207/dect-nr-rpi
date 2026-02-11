@@ -34,7 +34,6 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 	# Chunk setup
 	data_size = len(data)
 	no_chunks = (data_size + chunk_size - 1) // chunk_size
-	print(f"\nSending {len(data)} bytes in {no_chunks} chunks")
 	
 	for i in range(no_chunks):
 		# Create chunk
@@ -48,8 +47,6 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 			no_first_bytes = len(chunk)
 			
 		first_bytes = ' '.join(f'{b:02X}' for b in chunk[:no_first_bytes])
-		print(f"Chunk {i+1}/{no_chunks} (bytes {chunk_start}-{chunk_end})")
-		print(f"  First {no_first_bytes} bytes: {first_bytes}")
 		
 		# SPI setup
 		spi = spidev.SpiDev()
@@ -65,8 +62,6 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		spi.close()
 		time.sleep(0.5)
 	# End of loop
-		
-	print("Transfer complete!")
 	
 	return
 # End of function
@@ -82,8 +77,9 @@ def main():
 	tx_data = capture_new_jpeg(picam2)
 	
 	# Send image as data through SPI
-	CHUNK_SIZE = 4096	
-	send_chunks(tx_data, CHUNK_SIZE)
+	CHUNK_SIZE = 4096
+	MAX_DATA_SIZE = 32768	
+	send_chunks(tx_data, CHUNK_SIZE, MAX_DATA_SIZE)
 # End main
 
 if __name__ == "__main__":

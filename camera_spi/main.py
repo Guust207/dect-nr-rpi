@@ -34,7 +34,7 @@ def capture_new_jpeg():
 	# Start camera and warm up
 	global picam2
 	picam2.start()
-	time.sleep(2)
+	time.sleep(1)
 	
 	# Capture image data
 	img_data = io.BytesIO()
@@ -54,6 +54,7 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 	
 	# Check size
 	data_size = len(data)
+	print(f"Data size: {data_size}")
 	if data_size > max_data_size:
 		return # Do not send data above threshold
 	
@@ -67,8 +68,6 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 	spi.max_speed_hz = 8_000_000
 	spi.mode = 3
 	
-	time.sleep(0.05)
-	
 	for i in range(no_chunks):
 		# Create chunk
 		chunk_start = i * chunk_size
@@ -77,6 +76,7 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		
 		# Send chunk
 		spi.xfer3(list(chunk))
+		time.sleep(0.5) # Necessary for slave to have time to process
 	# End of loop
 # End of function
 
@@ -91,7 +91,6 @@ def main():
 	# Camera object init and preview start
 	picam2 = Picamera2()
 	picam2.options["quality"] = 45
-	picam2.configure(picam2.create_still_configuration({"format": "YUV420"}))
 
 	# Capture image using camera
 	tx_data = capture_new_jpeg()

@@ -79,8 +79,6 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 	spi.max_speed_hz = 8_000_000
 	spi.mode = 3
 	
-	time.sleep(0.05)
-	
 	for i in range(no_chunks):
 		# Create chunk
 		chunk_start = i * chunk_size
@@ -96,9 +94,9 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		print(f"Chunk {i+1}/{no_chunks} (bytes {chunk_start}-{chunk_end})")
 		print(f"  First {no_first_bytes} bytes: {first_bytes}")
 		
-		
 		# Send chunk
 		spi.xfer3(list(chunk))
+		time.sleep(0.1) # Necessary for slave to process
 	# End of loop
 	
 	spi.close()
@@ -118,7 +116,6 @@ signal.signal(signal.SIGINT, cleanup)
 # Camera object init and preview start
 picam2 = Picamera2()
 picam2.options["quality"] = 45
-capture_config = picam2.create_still_configuration({"format": "YUV420"})
 
 counter = 1
 while True:

@@ -2,20 +2,44 @@
 import time
 import os
 import io
+import sys
+import signal
 import numpy as np
 import cv2 as cv
-from picamera2 import Picamera2, Preview
+from picamera2 import Picamera2
 import spidev
 
+picam2 = None
+spi = None
 
-def capture_new_jpeg(camera):
+
+def cleanup(signum=None, frame=None):
+	global picam2, spi
+	print("Cleaning up..")
+	
+	if spi:
+		spi.close()
+		
+	if picam2:
+		try:
+			picam2.stop()
+		except:
+			pass
+		picam2.close()
+		
+	sys.exit(0)
+# End function
+	
+
+def capture_new_jpeg():
 	# Start camera and warm up
-	camera.start(show_preview=True)
-	time.sleep(2)
+	global picam2
+	picam2.start(show_preview=True)
+	time.sleep(1)
 	
 	# Capture image data
 	img_data = io.BytesIO()
-	camera.capture_file(img_data, format="jpeg")
+	picam2.capture_file(img_data, format="jpeg")
 
 	# Get image bytes
 	img_data = img_data.getbuffer().tobytes()
@@ -23,7 +47,8 @@ def capture_new_jpeg(camera):
 	print(f"Image data size in bytes: {data_size}")
 
 	# Display the image
-	camera.stop_preview()
+	picam2.stop_preview()
+	picam2.stop()
 	img_arr = np.frombuffer(img_data, dtype=np.uint8)
 	img = cv.imdecode(img_arr, cv.IMREAD_COLOR)
 	cv.imshow("Image", img)
@@ -35,6 +60,8 @@ def capture_new_jpeg(camera):
 
 
 def send_chunks(data, chunk_size=4096, max_data_size=32768):
+	global spi
+	
 	# Check size
 	data_size = len(data)
 	if data_size > max_data_size:
@@ -45,6 +72,14 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 	data_size = len(data)
 	no_chunks = (data_size + chunk_size - 1) // chunk_size
 	print(f"\nSending {len(data)} bytes in {no_chunks} chunks")
+	
+	# SPI setup
+	spi = spidev.SpiDev()
+	spi.open(0, 0)
+	spi.max_speed_hz = 8_000_000
+	spi.mode = 3
+	
+	time.sleep(0.05)
 	
 	for i in range(no_chunks):
 		# Create chunk
@@ -61,20 +96,13 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		print(f"Chunk {i+1}/{no_chunks} (bytes {chunk_start}-{chunk_end})")
 		print(f"  First {no_first_bytes} bytes: {first_bytes}")
 		
-		# SPI setup
-		spi = spidev.SpiDev()
-		spi.open(0, 0)
-		spi.max_speed_hz = 8_000_000
-		spi.mode = 3
-		spi.bits_per_word = 8
 		
 		# Send chunk
 		spi.xfer3(list(chunk))
-		
-		# Close SPI and wait
-		spi.close()
-		time.sleep(0.5)
 	# End of loop
+	
+	spi.close()
+	spi = None
 		
 	print("Transfer complete!")
 	
@@ -83,6 +111,10 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 
 	
 # Main loop
+# Signal setup
+signal.signal(signal.SIGTERM, cleanup)
+signal.signal(signal.SIGINT, cleanup)
+
 # Camera object init and preview start
 picam2 = Picamera2()
 picam2.options["quality"] = 45
@@ -91,7 +123,7 @@ capture_config = picam2.create_still_configuration({"format": "YUV420"})
 counter = 1
 while True:
 	# Capture image using camera
-	tx_data = capture_new_jpeg(picam2)
+	tx_data = capture_new_jpeg()
 	
 	print(f"\n=== Round {counter} ===")
 	

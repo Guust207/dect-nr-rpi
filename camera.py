@@ -96,7 +96,7 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		
 		# Send chunk
 		spi.xfer3(list(chunk))
-		time.sleep(0.1) # Necessary for slave to process
+		time.sleep(0.15) # Necessary for slave to process
 	# End of loop
 	
 	spi.close()

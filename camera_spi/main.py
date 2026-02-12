@@ -72,11 +72,11 @@ def send_chunks(data, chunk_size=4096, max_data_size=32768):
 		# Create chunk
 		chunk_start = i * chunk_size
 		chunk_end = min(chunk_start + chunk_size, len(data))
-		chunk = bytearray(data[chunk_start:chunk_end])		
+		chunk = bytearray(data[chunk_start:chunk_end])
 		
 		# Send chunk
 		spi.xfer3(list(chunk))
-		time.sleep(0.5) # Necessary for slave to have time to process
+		time.sleep(0.15) # Necessary for slave to have time to process
 	# End of loop
 # End of function
 
@@ -99,6 +99,9 @@ def main():
 	CHUNK_SIZE = 4096
 	MAX_DATA_SIZE = 32768	
 	send_chunks(tx_data, CHUNK_SIZE, MAX_DATA_SIZE)
+	
+	# Clean up before finishing
+	cleanup()
 # End main
 
 if __name__ == "__main__":

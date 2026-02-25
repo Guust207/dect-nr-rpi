@@ -1,9 +1,9 @@
 [Unit]
-Description="Run camera_spi.service every 60 seconds"
+Description="Run camera_spi.service every 5 seconds"
 
 [Timer]
 OnBootSec=30
-OnUnitActiveSec=60
+OnUnitActiveSec=5
 AccuracySec=1s
 Persistent=true
 

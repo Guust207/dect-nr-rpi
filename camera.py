@@ -35,9 +35,9 @@ picam2.options["quality"] = 45
 picam2.start()
 time.sleep(1)  # One-time warmup
 
-CHUNK_SIZE = 4096
+CHUNK_SIZE = 8192
 MAX_DATA_SIZE = 32768
-INTER_CHUNK_DELAY = 0.005  # 5ms — tune this down if stable
+INTER_CHUNK_DELAY = 0  # 5ms — tune this down if stable
 
 def capture_jpeg():
     buf = io.BytesIO()

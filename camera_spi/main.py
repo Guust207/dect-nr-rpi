@@ -2,7 +2,6 @@
 import time
 import sys
 import signal
-import struct
 import spidev
 import cv2
 import numpy as np
@@ -15,7 +14,7 @@ spi = None
 # Ready pin from nRF (active high = ready for new image)
 READY_PIN = 25  # GPIO25 (physical pin 22)
 
-HEADER_MAGIC = b'IMG\x00'
+CHUNK_SIZE = 4096
 MAX_DATA_SIZE = 32768
 JPEG_QUALITY = 45
 
@@ -76,13 +75,8 @@ def capture_jpeg():
 # End function
 
 
-def send_image(data):
-    """Send image using header-based protocol with ready pin handshake.
-    
-    Protocol:
-      Phase 1: Wait for ready, send 8-byte header (magic 'IMG\\0' + uint32 LE size)
-      Phase 2: Wait for ready, send entire image data in one transfer
-    """
+def send_chunks(data):
+    """Send image data over SPI in chunks, waiting for nRF ready pin first."""
     global spi
 
     data_size = len(data)
@@ -90,30 +84,26 @@ def send_image(data):
         print(f"Image too large ({data_size} bytes), skipping")
         return
 
+    # Wait for nRF to be ready
+    if not wait_for_ready():
+        print("nRF not ready, skipping this image")
+        return
+
+    no_chunks = (data_size + CHUNK_SIZE - 1) // CHUNK_SIZE
+    print(f"Sending {data_size} bytes in {no_chunks} chunks")
+
     t_start = time.monotonic()
 
-    # Phase 1: Send header
-    if not wait_for_ready():
-        print("nRF not ready for header, skipping")
-        return
-
-    header = HEADER_MAGIC + struct.pack('<I', data_size)
-    spi.xfer3(list(header))
-
-    t_header = time.monotonic()
-    print(f"Header sent: {data_size} bytes announced")
-
-    # Phase 2: Send image data
-    if not wait_for_ready():
-        print("nRF not ready for image data, skipping")
-        return
-
-    spi.xfer3(data)
+    for i in range(no_chunks):
+        chunk_start = i * CHUNK_SIZE
+        chunk_end = min(chunk_start + CHUNK_SIZE, data_size)
+        chunk = data[chunk_start:chunk_end]
+        spi.xfer3(chunk)
+    # End of loop
 
     elapsed = time.monotonic() - t_start
     throughput = data_size / elapsed / 1024
-    print(f"Image sent: {data_size} bytes in {elapsed * 1000:.0f}ms "
-          f"({throughput:.1f} KB/s, header: {(t_header - t_start) * 1000:.0f}ms)")
+    print(f"SPI transfer: {elapsed * 1000:.0f}ms ({throughput:.1f} KB/s)")
 # End function
 
 
@@ -147,7 +137,7 @@ def main():
         t_round = time.monotonic()
 
         img_data = capture_jpeg()
-        send_image(img_data)
+        send_chunks(img_data)
 
         total = time.monotonic() - t_round
         print(f"Total round time: {total * 1000:.0f}ms")

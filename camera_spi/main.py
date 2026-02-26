@@ -99,6 +99,9 @@ def send_chunks(data):
         chunk_end = min(chunk_start + CHUNK_SIZE, data_size)
         chunk = data[chunk_start:chunk_end]
         spi.xfer3(chunk)
+
+        if i < no_chunks - 1:
+            time.sleep(0.002)
     # End of loop
 
     elapsed = time.monotonic() - t_start

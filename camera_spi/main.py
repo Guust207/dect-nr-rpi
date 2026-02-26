@@ -76,17 +76,12 @@ def capture_jpeg():
 
 
 def send_chunks(data):
-    """Send image data over SPI in chunks, waiting for nRF ready pin first."""
+    """Send image data over SPI in chunks, with per-chunk ready handshake."""
     global spi
 
     data_size = len(data)
     if data_size > MAX_DATA_SIZE:
         print(f"Image too large ({data_size} bytes), skipping")
-        return
-
-    # Wait for nRF to be ready (pin HIGH)
-    if not wait_for_ready():
-        print("nRF not ready, skipping this image")
         return
 
     no_chunks = (data_size + CHUNK_SIZE - 1) // CHUNK_SIZE
@@ -95,6 +90,11 @@ def send_chunks(data):
     t_start = time.monotonic()
 
     for i in range(no_chunks):
+        # Wait for nRF ready before EVERY chunk
+        if not wait_for_ready():
+            print(f"nRF not ready for chunk {i+1}/{no_chunks}, aborting")
+            return
+
         chunk_start = i * CHUNK_SIZE
         chunk_end = min(chunk_start + CHUNK_SIZE, data_size)
         chunk = data[chunk_start:chunk_end]
@@ -103,19 +103,6 @@ def send_chunks(data):
     elapsed = time.monotonic() - t_start
     throughput = data_size / elapsed / 1024
     print(f"SPI transfer: {elapsed * 1000:.0f}ms ({throughput:.1f} KB/s)")
-
-    # Wait for nRF to acknowledge (pin goes LOW after it detects SOI)
-    # This ensures we don't start a new image before nRF has processed this one
-    ack_start = time.monotonic()
-    while GPIO.input(READY_PIN) == 1:
-        if time.monotonic() - ack_start > 2.0:
-            print("WARNING: nRF did not acknowledge image (pin stayed HIGH)")
-            break
-        time.sleep(0.001)
-    
-    ack_time = time.monotonic() - ack_start
-    if ack_time > 0.01:
-        print(f"nRF acknowledged after {ack_time*1000:.0f}ms")
 # End function
 
 

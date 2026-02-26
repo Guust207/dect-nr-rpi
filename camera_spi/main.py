@@ -1,108 +1,146 @@
 # Imports
 import time
-import os
-import io
 import sys
 import signal
-import numpy as np
-from picamera2 import Picamera2
 import spidev
+import cv2
+import numpy as np
+import RPi.GPIO as GPIO
+from picamera2 import Picamera2
 
 picam2 = None
 spi = None
 
+# Ready pin from nRF (active high = ready for new image)
+READY_PIN = 25  # GPIO25 (physical pin 22)
+
+CHUNK_SIZE = 4096
+MAX_DATA_SIZE = 32768
+JPEG_QUALITY = 45
 
 def cleanup(signum=None, frame=None):
-	global picam2, spi
-	print("Cleaning up..")
-	
-	if spi:
-		spi.close()
-		
-	if picam2:
-		try:
-			picam2.stop()
-		except:
-			pass
-		picam2.close()
-		
-	sys.exit(0)
+    global picam2, spi
+    print("Cleaning up...")
+
+    GPIO.cleanup()
+
+    if spi:
+        spi.close()
+
+    if picam2:
+        try:
+            picam2.stop()
+        except:
+            pass
+        picam2.close()
+
+    sys.exit(0)
 # End function
 
 
-def capture_new_jpeg():
-	# Start camera and warm up
-	global picam2
-	picam2.start()
-	time.sleep(1)
-	
-	# Capture image data
-	img_data = io.BytesIO()
-	picam2.capture_file(img_data, format="jpeg")
-
-	# Get image bytes
-	img_data = img_data.getbuffer().tobytes()
-
-	# Return image data
-	picam2.stop()
-	return img_data
-# End of function
+def wait_for_ready(timeout=5.0):
+    """Wait for nRF ready pin to go HIGH before sending."""
+    start = time.monotonic()
+    while GPIO.input(READY_PIN) == 0:
+        if time.monotonic() - start > timeout:
+            print("WARNING: Ready timeout!")
+            return False
+        time.sleep(0.001)
+    return True
+# End function
 
 
-def send_chunks(data, chunk_size=4096, max_data_size=32768):
-	global spi
-	
-	# Check size
-	data_size = len(data)
-	print(f"Data size: {data_size}")
-	if data_size > max_data_size:
-		return # Do not send data above threshold
-	
-	# Chunk setup
-	data_size = len(data)
-	no_chunks = (data_size + chunk_size - 1) // chunk_size
-	
-	# SPI setup
-	spi = spidev.SpiDev()
-	spi.open(0, 0)
-	spi.max_speed_hz = 8_000_000
-	spi.mode = 3
-	
-	for i in range(no_chunks):
-		# Create chunk
-		chunk_start = i * chunk_size
-		chunk_end = min(chunk_start + chunk_size, len(data))
-		chunk = bytearray(data[chunk_start:chunk_end])
-		
-		# Send chunk
-		spi.xfer3(list(chunk))
-		time.sleep(0.15) # Necessary for slave to have time to process
-	# End of loop
-# End of function
+def capture_jpeg():
+    """Capture JPEG using array capture + cv2 encode (faster than capture_file)."""
+    global picam2
+
+    t0 = time.monotonic()
+    array = picam2.capture_array()
+    t_capture = time.monotonic()
+
+    # picamera2 returns RGB, cv2 expects BGR
+    bgr = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
+    ret, jpeg = cv2.imencode('.jpg', bgr, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+    t_encode = time.monotonic()
+
+    data = jpeg.tobytes()
+    print(f"Captured {len(data)} bytes "
+          f"(capture: {(t_capture - t0) * 1000:.0f}ms, "
+          f"encode: {(t_encode - t_capture) * 1000:.0f}ms)")
+    return data
+# End function
+
+
+def send_chunks(data):
+    """Send image data over SPI in chunks, waiting for nRF ready pin first."""
+    global spi
+
+    data_size = len(data)
+    if data_size > MAX_DATA_SIZE:
+        print(f"Image too large ({data_size} bytes), skipping")
+        return
+
+    # Wait for nRF to be ready
+    if not wait_for_ready():
+        print("nRF not ready, skipping this image")
+        return
+
+    no_chunks = (data_size + CHUNK_SIZE - 1) // CHUNK_SIZE
+    print(f"Sending {data_size} bytes in {no_chunks} chunks")
+
+    t_start = time.monotonic()
+
+    for i in range(no_chunks):
+        chunk_start = i * CHUNK_SIZE
+        chunk_end = min(chunk_start + CHUNK_SIZE, data_size)
+        chunk = data[chunk_start:chunk_end]
+        spi.xfer3(chunk)
+    # End of loop
+
+    elapsed = time.monotonic() - t_start
+    throughput = data_size / elapsed / 1024
+    print(f"SPI transfer: {elapsed * 1000:.0f}ms ({throughput:.1f} KB/s)")
+# End function
 
 
 def main():
-	global picam2
-	
-	# SIGTERM handling
-	signal.signal(signal.SIGTERM, cleanup)
-	signal.signal(signal.SIGINT, cleanup)
-	
-	# Camera object init and preview start
-	picam2 = Picamera2()
-	picam2.options["quality"] = 45
+    global picam2, spi
 
-	# Capture image using camera
-	tx_data = capture_new_jpeg()
-	
-	# Send image as data through SPI
-	CHUNK_SIZE = 4096
-	MAX_DATA_SIZE = 32768	
-	send_chunks(tx_data, CHUNK_SIZE, MAX_DATA_SIZE)
-	
-	# Clean up before finishing
-	cleanup()
+    # Signal handling
+    signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, cleanup)
+
+    # GPIO setup for ready pin
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(READY_PIN, GPIO.IN)
+
+    # Initialize SPI once (keep open)
+    spi = spidev.SpiDev()
+    spi.open(0, 0)
+    spi.max_speed_hz = 8_000_000
+    spi.mode = 3
+
+    # Initialize camera once, keep running
+    picam2 = Picamera2()
+    picam2.options["quality"] = JPEG_QUALITY
+    picam2.configure(picam2.create_still_configuration(main={"size": (640, 480)}))
+    picam2.start()
+    time.sleep(1)  # One-time warmup
+
+    counter = 1
+    while True:
+        print(f"\n=== Round {counter} ===")
+        t_round = time.monotonic()
+
+        img_data = capture_jpeg()
+        send_chunks(img_data)
+
+        total = time.monotonic() - t_round
+        print(f"Total round time: {total * 1000:.0f}ms")
+
+        counter += 1
 # End main
 
+
 if __name__ == "__main__":
-	main()
+    main()

@@ -79,4 +79,4 @@ while True:
     send_chunks(img_data)
     
     counter += 1
-    time.sleep(5)  # Interval between captures — adjust as needed
+    time.sleep(0.5)  # Interval between captures — adjust as needed

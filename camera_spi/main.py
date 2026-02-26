@@ -39,13 +39,17 @@ def cleanup(signum=None, frame=None):
 
 
 def wait_for_ready(timeout=5.0):
-    """Wait for nRF ready pin to go HIGH before sending."""
     start = time.monotonic()
+    if GPIO.input(READY_PIN) == 0:
+        print("Waiting for nRF ready...")
     while GPIO.input(READY_PIN) == 0:
         if time.monotonic() - start > timeout:
             print("WARNING: Ready timeout!")
             return False
         time.sleep(0.001)
+    waited = time.monotonic() - start
+    if waited > 0.01:
+        print(f"nRF ready after {waited*1000:.0f}ms")
     return True
 # End function
 

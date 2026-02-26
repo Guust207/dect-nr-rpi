@@ -84,7 +84,7 @@ def send_chunks(data):
         print(f"Image too large ({data_size} bytes), skipping")
         return
 
-    # Wait for nRF to be ready
+    # Wait for nRF to be ready (pin HIGH)
     if not wait_for_ready():
         print("nRF not ready, skipping this image")
         return
@@ -99,11 +99,23 @@ def send_chunks(data):
         chunk_end = min(chunk_start + CHUNK_SIZE, data_size)
         chunk = data[chunk_start:chunk_end]
         spi.xfer3(chunk)
-    # End of loop
 
     elapsed = time.monotonic() - t_start
     throughput = data_size / elapsed / 1024
     print(f"SPI transfer: {elapsed * 1000:.0f}ms ({throughput:.1f} KB/s)")
+
+    # Wait for nRF to acknowledge (pin goes LOW after it detects SOI)
+    # This ensures we don't start a new image before nRF has processed this one
+    ack_start = time.monotonic()
+    while GPIO.input(READY_PIN) == 1:
+        if time.monotonic() - ack_start > 2.0:
+            print("WARNING: nRF did not acknowledge image (pin stayed HIGH)")
+            break
+        time.sleep(0.001)
+    
+    ack_time = time.monotonic() - ack_start
+    if ack_time > 0.01:
+        print(f"nRF acknowledged after {ack_time*1000:.0f}ms")
 # End function
 
 

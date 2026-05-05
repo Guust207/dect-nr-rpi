@@ -15,8 +15,8 @@ spi = None
 READY_PIN = 25  # GPIO25 (physical pin 22)
 
 CHUNK_SIZE = 4096
-MAX_DATA_SIZE = 32768
-JPEG_QUALITY = 45
+MAX_DATA_SIZE = 16384
+JPEG_QUALITY = 60
 
 def cleanup(signum=None, frame=None):
     global picam2, spi

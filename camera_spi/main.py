@@ -60,9 +60,12 @@ def compress_image(img):
     """Compress JPEG image to desired size. Returns byte array"""
     global JPEG_QUALITY
     data = b"\x00"
-    data_in_range = False
 
-    while not data_in_range:
+    data_in_range = False
+    max_retries = 5
+
+    while not data_in_range and max_retries > 0:
+        max_retries -= 1
         ret, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
         data = jpeg.tobytes()
 

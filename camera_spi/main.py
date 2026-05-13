@@ -15,8 +15,10 @@ spi = None
 READY_PIN = 25  # GPIO25 (physical pin 22)
 
 CHUNK_SIZE = 4096
+MIN_DATA_SIZE = 8192
 MAX_DATA_SIZE = 16384
 JPEG_QUALITY = 60
+
 
 def cleanup(signum=None, frame=None):
     global picam2, spi
@@ -49,8 +51,29 @@ def wait_for_ready(timeout=5.0):
         time.sleep(0.001)
     waited = time.monotonic() - start
     if waited > 0.01:
-        print(f"nRF ready after {waited*1000:.0f}ms")
+        print(f"nRF ready after {waited * 1000:.0f}ms")
     return True
+# End function
+
+
+def compress_image(img):
+    """Compress JPEG image to desired size. Returns byte array"""
+    global JPEG_QUALITY
+    data = b"\x00"
+    data_in_range = False
+
+    while not data_in_range:
+        ret, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        data = jpeg.tobytes()
+
+        if len(data) > MAX_DATA_SIZE: # Image too big, reduce JPEG_QUALITY
+            JPEG_QUALITY = max(JPEG_QUALITY - 10, 0)
+        elif len(data) < MIN_DATA_SIZE: # Image too small, increase JPEG_QUALITY
+            JPEG_QUALITY = min(JPEG_QUALITY + 10, 100)
+
+        data_in_range = MIN_DATA_SIZE < len(data) < MAX_DATA_SIZE
+
+    return data
 # End function
 
 
@@ -64,10 +87,10 @@ def capture_jpeg():
 
     # picamera2 returns RGB, cv2 expects BGR
     bgr = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
-    ret, jpeg = cv2.imencode('.jpg', bgr, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+    data = compress_image(bgr)
+
     t_encode = time.monotonic()
 
-    data = jpeg.tobytes()
     print(f"Captured {len(data)} bytes "
           f"(capture: {(t_capture - t0) * 1000:.0f}ms, "
           f"encode: {(t_encode - t_capture) * 1000:.0f}ms)")
@@ -79,16 +102,12 @@ def send_chunks(data):
     """Send image data over SPI in chunks, waiting for nRF ready pin first."""
     global spi
 
-    data_size = len(data)
-    if data_size > MAX_DATA_SIZE:
-        print(f"Image too large ({data_size} bytes), skipping")
-        return
-
     # Wait for nRF to be ready
     if not wait_for_ready():
         print("nRF not ready, skipping this image")
         return
 
+    data_size = len(data)
     no_chunks = (data_size + CHUNK_SIZE - 1) // CHUNK_SIZE
     print(f"Sending {data_size} bytes in {no_chunks} chunks")
 

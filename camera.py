@@ -96,9 +96,9 @@ def main():
     t_round = time.monotonic()
 
     img_data = capture_jpeg()
-	jpeg_as_np = np.frombuffer(img_data, dtype=np.uint8)
-	img = cv2.imdecode(jpeg_as_np, flags=1)
-	cv2.imwrite("test.jpg", img)
+    jpeg_as_np = np.frombuffer(img_data, dtype=np.uint8)
+    img = cv2.imdecode(jpeg_as_np, flags=1)
+    cv2.imwrite("test.jpg", img)
 
     total = time.monotonic() - t_round
     print(f"Total round time: {total * 1000:.0f}ms")

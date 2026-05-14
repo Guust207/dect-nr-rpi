@@ -1,133 +1,111 @@
 # Imports
 import time
-import os
-import io
 import sys
 import signal
-import numpy as np
-import cv2 as cv
-from picamera2 import Picamera2
 import spidev
+import cv2
+import numpy as np
+import RPi.GPIO as GPIO
+from picamera2 import Picamera2
 
 picam2 = None
-spi = None
+
+# Ready pin from nRF (active high = ready for new image)
+READY_PIN = 25  # GPIO25 (physical pin 22)
+
+CHUNK_SIZE = 4096
+MIN_DATA_SIZE = 8192
+MAX_DATA_SIZE = 16384
+JPEG_QUALITY = 60
 
 
 def cleanup(signum=None, frame=None):
-	global picam2, spi
-	print("Cleaning up..")
-	
-	if spi:
-		spi.close()
-		
-	if picam2:
-		try:
-			picam2.stop()
-		except:
-			pass
-		picam2.close()
-		
-	sys.exit(0)
+    global picam2, spi
+    print("Cleaning up...")
+
+    GPIO.cleanup()
+
+    if picam2:
+        try:
+            picam2.stop()
+        except:
+            pass
+        picam2.close()
+
+    sys.exit(0)
 # End function
-	
-
-def capture_new_jpeg():
-	# Start camera and warm up
-	global picam2
-	picam2.start(show_preview=True)
-	time.sleep(1)
-	
-	# Capture image data
-	img_data = io.BytesIO()
-	picam2.capture_file(img_data, format="jpeg")
-
-	# Get image bytes
-	img_data = img_data.getbuffer().tobytes()
-	data_size = len(img_data)
-	print(f"Image data size in bytes: {data_size}")
-
-	# Display the image
-	picam2.stop_preview()
-	picam2.stop()
-	img_arr = np.frombuffer(img_data, dtype=np.uint8)
-	img = cv.imdecode(img_arr, cv.IMREAD_COLOR)
-	cv.imshow("Image", img)
-	time.sleep(2)
-	cv.destroyAllWindows()
-	
-	return img_data
-# End of function
 
 
-def send_chunks(data, chunk_size=4096, max_data_size=32768):
-	global spi
-	
-	# Check size
-	data_size = len(data)
-	if data_size > max_data_size:
-		print("Transfer aborted. Too large data.")
-		return # Do not send data above threshold
-	
-	# Chunk setup
-	data_size = len(data)
-	no_chunks = (data_size + chunk_size - 1) // chunk_size
-	print(f"\nSending {len(data)} bytes in {no_chunks} chunks")
-	
-	# SPI setup
-	spi = spidev.SpiDev()
-	spi.open(0, 0)
-	spi.max_speed_hz = 8_000_000
-	spi.mode = 3
-	
-	for i in range(no_chunks):
-		# Create chunk
-		chunk_start = i * chunk_size
-		chunk_end = min(chunk_start + chunk_size, len(data))
-		chunk = bytearray(data[chunk_start:chunk_end])
-		
-		# Show what we're sending
-		no_first_bytes = 16
-		if len(chunk) < no_first_bytes:
-			no_first_bytes = len(chunk)
-			
-		first_bytes = ' '.join(f'{b:02X}' for b in chunk[:no_first_bytes])
-		print(f"Chunk {i+1}/{no_chunks} (bytes {chunk_start}-{chunk_end})")
-		print(f"  First {no_first_bytes} bytes: {first_bytes}")
-		
-		# Send chunk
-		spi.xfer3(list(chunk))
-		time.sleep(0.15) # Necessary for slave to process
-	# End of loop
-	
-	spi.close()
-	spi = None
-		
-	print("Transfer complete!")
-	
-	return
-# End of function
+def compress_image(img):
+    """Compress JPEG image to desired size. Returns byte array"""
+    global JPEG_QUALITY
+    data = b"\x00"
 
-	
-# Main loop
-# Signal setup
-signal.signal(signal.SIGTERM, cleanup)
-signal.signal(signal.SIGINT, cleanup)
+    data_in_range = False
+    max_retries = 5
 
-# Camera object init and preview start
-picam2 = Picamera2()
-picam2.options["quality"] = 45
+    while not data_in_range and max_retries > 0:
+        max_retries -= 1
+        ret, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        data = jpeg.tobytes()
 
-counter = 1
-while True:
-	# Capture image using camera
-	tx_data = capture_new_jpeg()
-	
-	print(f"\n=== Round {counter} ===")
-	
-	# Send image as data through SPI
-	CHUNK_SIZE = 4096
-	MAX_DATA_SIZE = 32768
-	send_chunks(tx_data, CHUNK_SIZE, MAX_DATA_SIZE)
-	
-	counter += 1
-	time.sleep(5)
+        if len(data) > MAX_DATA_SIZE: # Image too big, reduce JPEG_QUALITY
+            JPEG_QUALITY = max(JPEG_QUALITY - 10, 0)
+        elif len(data) < MIN_DATA_SIZE: # Image too small, increase JPEG_QUALITY
+            JPEG_QUALITY = min(JPEG_QUALITY + 10, 100)
+
+        data_in_range = MIN_DATA_SIZE < len(data) < MAX_DATA_SIZE
+
+    return data
+# End function
+
+
+def capture_jpeg():
+    """Capture JPEG using array capture + cv2 encode (faster than capture_file)."""
+    global picam2
+
+    t0 = time.monotonic()
+    array = picam2.capture_array()
+    t_capture = time.monotonic()
+
+    # picamera2 returns RGB, cv2 expects BGR
+    bgr = cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
+    data = compress_image(bgr)
+
+    t_encode = time.monotonic()
+
+    print(f"Captured {len(data)} bytes "
+          f"(capture: {(t_capture - t0) * 1000:.0f}ms, "
+          f"encode: {(t_encode - t_capture) * 1000:.0f}ms)")
+    return data
+# End function
+
+
+def main():
+    global picam2
+
+    # Initialize camera once, keep running
+    picam2 = Picamera2()
+    picam2.options["quality"] = JPEG_QUALITY
+    picam2.configure(picam2.create_still_configuration(main={"size": (640, 480)}))
+    picam2.start()
+    time.sleep(1)  # One-time warmup
+
+    counter = 1
+    print(f"\n=== Round {counter} ===")
+    t_round = time.monotonic()
+
+    img_data = capture_jpeg()
+	jpeg_as_np = np.frombuffer(img_data, dtype=np.uint8)
+	img = cv2.imdecode(jpeg_as_np, flags=1)
+	cv2.imwrite("test.jpg", img)
+
+    total = time.monotonic() - t_round
+    print(f"Total round time: {total * 1000:.0f}ms")
+
+    counter += 1
+# End main
+
+
+if __name__ == "__main__":
+    main()

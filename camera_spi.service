@@ -3,7 +3,7 @@ Description="Capture image and send via SPI"
 After=multi-user.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=vimms
 Group=vimms
 WorkingDirectory=/home/vimms/dect-nr-rpi/camera_spi
